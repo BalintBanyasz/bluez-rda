@@ -520,6 +520,73 @@ static int bcsp(int fd, struct uart_t *u, struct termios *ti)
 	return 0;
 }
 
+//Add by RDA android  ,rda initialization.
+//setup uart flow control, if your uart hardware fifo less than 480 bytes.
+static int rda_setup_flow_ctl(int fd, struct uart_t *u, struct termios *ti)
+{
+        unsigned int i, num_send;
+
+        unsigned char rda_flow_ctl_10[][14] =
+        {
+                {0x01,0x02,0xfd,0x0a,0x00,0x01,0x44,0x00,0x20,0x40,0x3c,0x00,0x00,0x00},
+                {0x01,0x02,0xfd,0x0a,0x00,0x01,0x10,0x00,0x00,0x50,0x22,0x01,0x00,0x00},// flow control
+        };
+
+        if (u->flags & FLOW_CTL) {
+                /*Setup flow control */
+                for (i = 0; i < sizeof(rda_flow_ctl_10)/sizeof(rda_flow_ctl_10[0]); i++) {
+                        num_send = write(fd, rda_flow_ctl_10[i], sizeof(rda_flow_ctl_10[i]));
+                        if (num_send != sizeof(rda_flow_ctl_10[i])) {
+                                perror("");
+                                printf("num_send = %d (%d)\n", num_send, sizeof(rda_flow_ctl_10[i]));
+                                return -1;
+                        }
+                        usleep(5000);
+                }
+        }
+
+        usleep(50000);
+
+        return 0;
+}
+
+extern int RDABT_core_Intialization(int fd);
+static int rda_init(int fd, struct uart_t *u, struct termios *ti)
+{
+        unsigned int i, num_send;
+        unsigned char rda_baud_rate_10[][14] =
+        {
+                {0x01,0x02,0xfd,0x0a,0x00,0x01,0x60,0x00,0x00,0x80,0x00,0xc2,0x01,0x00},// 115200
+                {0x01,0x02,0xFD,0x0A,0x00,0x01,0x40,0x00,0x00,0x80,0x00,0x01,0x00,0x00},//PSKEY: modify flag
+        };
+
+        RDABT_core_Intialization(fd);
+
+
+#if 1
+        if (u->speed != 115200) {
+                //{0x01,0x02,0xfd,0x0a,0x00,0x01,0x60,0x00,0x00,0x80,0x80,0x25,0x00,0x00},// 9600
+                rda_baud_rate_10[0][10] = (unsigned char)u->speed;
+                rda_baud_rate_10[0][11] = (unsigned char)(u->speed >> 8);
+                rda_baud_rate_10[0][12] = (unsigned char)(u->speed >> 16);
+                rda_baud_rate_10[0][13] = (unsigned char)(u->speed >> 24);
+                /* Modify Baud Rate */
+                for (i = 0; i < sizeof(rda_baud_rate_10)/sizeof(rda_baud_rate_10[0]); i++) {
+                        num_send = write(fd, rda_baud_rate_10[i], sizeof(rda_baud_rate_10[i]));
+                        if (num_send != sizeof(rda_baud_rate_10[i])) {
+                                perror("");
+                                printf("num_send = %d (%d)\n", num_send, sizeof(rda_baud_rate_10[i]));
+                                return -1;
+                        }
+                        usleep(3000);
+                }
+        }
+#endif
+
+        return 0;
+}
+//End by RDA android
+
 /*
  * CSR specific initialization
  * Inspired strongly by code in OpenBT and experimentations with Brainboxes
@@ -1060,6 +1127,12 @@ struct uart_t uart[] = {
 	{ "xircom",     0x0105, 0x080a, HCI_UART_H4,   115200, 115200,
 				FLOW_CTL, DISABLE_PM,  NULL, NULL     },
 
+//Add by RDA android ,add rda hci initial
+        /* RDA 587X */
+        { "rda",	0x0000, 0x0000, HCI_UART_H4,   115200, 921600,
+                                FLOW_CTL, DISABLE_PM, NULL, rda_init },
+//End by RDA android
+
 	/* CSR Casira serial adapter or BrainBoxes serial dongle (BL642) */
 	{ "csr",        0x0000, 0x0000, HCI_UART_H4,   115200, 115200,
 				FLOW_CTL, DISABLE_PM, NULL, csr      },
@@ -1236,6 +1309,13 @@ static int init_uart(char *dev, struct uart_t *u, int send_break, int raw)
 		perror("Can't set baud rate");
 		return -1;
 	}
+
+// Add by RDA android, if you open uart FLOW_CTL, let it TRUE, FALSE default.
+        if (u->flags & FLOW_CTL) {
+                ti.c_cflag |= CRTSCTS;
+                rda_setup_flow_ctl(fd, u, &ti);
+        }
+//End by RDA android
 
 	/* Set TTY to N_HCI line discipline */
 	i = N_HCI;
