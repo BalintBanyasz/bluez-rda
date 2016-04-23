@@ -1003,7 +1003,14 @@ int RDABT_core_Intialization(int fd)
 	Rdabt_trap_write_r10(fd);
 #elif defined(__RDA_CHIP_R11_5876__)
 
-  RDA_pin_to_high(bt_fd);
+	int bt_on_off = 0;
+	ioctl(bt_fd, IOCTL_BT_DEV_POWER, &bt_on_off);
+	usleep(5000);
+	bt_on_off = 1;
+	ioctl(bt_fd, IOCTL_BT_DEV_POWER, &bt_on_off);
+	usleep(5000);
+
+	RDA_pin_to_high(bt_fd);
 	RDA5876_RfInit(fd);
 	RDA5876_Pskey_RfInit(fd);
 
